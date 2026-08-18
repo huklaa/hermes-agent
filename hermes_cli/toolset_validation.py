@@ -21,13 +21,15 @@ def validate_platform_toolsets(
 ) -> List[str]:
     """Return human-readable warnings for a ``platform_toolsets`` mapping.
 
-    Two failure modes are reported:
+    Three failure modes are reported:
 
-    1. A toolset name that ``is_valid_toolset`` rejects — usually a corrupted or
+    1. A platform explicitly configured with an empty list, which means that
+       platform will start with no tools even when other platforms are valid.
+    2. A toolset name that ``is_valid_toolset`` rejects — usually a corrupted or
        renamed entry. When ``hermes-<platform>`` would have been valid (the exact
        #38798 shape, where ``cli`` held ``hermes`` instead of ``hermes-cli``),
        the warning includes that as a suggestion.
-    2. The mapping is non-empty but resolves to *zero* valid toolsets, so the
+    3. The mapping is non-empty but resolves to *zero* valid toolsets, so the
        agent would start with no tools at all.
 
     ``is_valid_toolset`` is injected (normally :func:`toolsets.validate_toolset`)
@@ -48,6 +50,13 @@ def validate_platform_toolsets(
 
     valid_count = 0
     for platform, raw in platform_toolsets.items():
+        if isinstance(raw, list) and not raw:
+            warnings.append(
+                f"platform '{platform}' is configured with an empty toolset list — "
+                "the agent will have no tools on this platform. Run `hermes tools` "
+                "to reconfigure."
+            )
+
         names = raw if isinstance(raw, list) else [raw]
         for name in names:
             if not isinstance(name, str) or not name:
