@@ -2363,6 +2363,45 @@ def clear_drift_alerted(job_id: str) -> None:
     _set_alert_flag(job_id, "drift_alerted", False)
 
 
+def set_provider_backoff(job_id: str, retry_after_seconds: float) -> Optional[str]:
+    """Persist a provider-requested cooldown and return its expiry.
+
+    The scheduler uses this for quota/rate-limit failures with an explicit
+    retry-after. A later, shorter retry-after must never pull an existing
+    cooldown earlier.
+    """
+    try:
+        seconds = float(retry_after_seconds)
+    except (TypeError, ValueError):
+        return None
+    if seconds <= 0:
+        return None
+
+    with _jobs_lock():
+        jobs = load_jobs()
+        now = _hermes_now()
+        requested_until = now + timedelta(seconds=seconds)
+        for job in jobs:
+            if job.get("id") != job_id:
+                continue
+
+            existing_raw = job.get("provider_backoff_until")
+            if existing_raw:
+                try:
+                    existing_until = _ensure_aware(
+                        datetime.fromisoformat(str(existing_raw))
+                    )
+                    if existing_until > requested_until:
+                        return existing_until.isoformat()
+                except (TypeError, ValueError):
+                    pass
+
+            job["provider_backoff_until"] = requested_until.isoformat()
+            save_jobs(jobs)
+            return job["provider_backoff_until"]
+    return None
+
+
 def note_fire_forward_failure(job_id: str, detail: str) -> bool:
     """Durably record that a scheduled fire could not be handed to the runner.
 
@@ -2444,6 +2483,7 @@ def _mark_job_run_locked(
                 if success:
                     job.pop("preflight_alerted", None)
                     job.pop("drift_alerted", None)
+                    job.pop("provider_backoff_until", None)
                     # The fire hand-off demonstrably works again — clear the
                     # forward-failure stamp so it only ever describes the
                     # CURRENT auto-fire health, not a healed past incident.
@@ -3183,6 +3223,29 @@ def _get_due_jobs_locked() -> List[Dict[str, Any]]:
                     needs_save = True
                     break
                 continue
+
+            # Provider-requested retry-after backoff (#89376): once every
+            # configured provider/fallback has told us the quota window is
+            # closed, do not keep dispatching the same guaranteed failure on
+            # every schedule tick. Persisting the expiry makes the suppression
+            # survive gateway restarts. Expired/malformed values are cleared
+            # lazily and normal due/catch-up semantics resume immediately.
+            provider_backoff_until = job.get("provider_backoff_until")
+            if provider_backoff_until:
+                try:
+                    backoff_until = _ensure_aware(
+                        datetime.fromisoformat(str(provider_backoff_until))
+                    )
+                except (TypeError, ValueError):
+                    backoff_until = None
+                if backoff_until is not None and backoff_until > now:
+                    continue
+                job.pop("provider_backoff_until", None)
+                for rj in raw_jobs:
+                    if rj.get("id") == job.get("id"):
+                        rj.pop("provider_backoff_until", None)
+                        needs_save = True
+                        break
 
             # Cross-process running-claim guard (#59229): if another scheduler
             # process already claimed this one-shot and its run is still in flight

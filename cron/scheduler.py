@@ -149,6 +149,35 @@ def _fallback_chain_phrase() -> str:
     )
 
 
+def _provider_retry_after_seconds(error: Exception) -> Optional[float]:
+    """Extract retry-after seconds from a structured rate-limit AuthError.
+
+    Codex currently preserves retry-after in the AuthError message (for
+    example ``retry after 123518s``). Keep the text parse narrowly gated by
+    ``is_rate_limited_auth_error`` so unrelated errors cannot suppress jobs.
+    """
+    try:
+        from hermes_cli.auth import is_rate_limited_auth_error
+    except Exception:
+        return None
+    if not is_rate_limited_auth_error(error):
+        return None
+
+    match = re.search(
+        r"\bretry[\s-]+after\s*[:=]?\s*(\d+(?:\.\d+)?)\s*"
+        r"(?:s|sec|secs|second|seconds)\b",
+        str(error),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    try:
+        seconds = float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds > 0 else None
+
+
 def _failure_streak_nudge(job: dict) -> str:
     """Return a review nudge when a recurring job keeps failing, else "".
 
@@ -5361,6 +5390,7 @@ def run_job(
             # provider while retaining a paid primary model.
             is_auth = isinstance(resolve_exc, AuthError)
             is_transient_net = _is_transient_provider_resolve_error(resolve_exc)
+            provider_retry_after = _provider_retry_after_seconds(resolve_exc)
             if not (is_auth or is_transient_net):
                 raise RuntimeError(format_runtime_provider_error(resolve_exc)) from resolve_exc
 
@@ -5406,8 +5436,35 @@ def run_job(
                     )
                     break
                 except Exception as fb_exc:
+                    fb_retry_after = _provider_retry_after_seconds(fb_exc)
+                    if fb_retry_after is not None:
+                        provider_retry_after = max(
+                            provider_retry_after or 0.0, fb_retry_after
+                        )
                     logger.debug("Job '%s': fallback %s failed: %s", job_id, fb_provider, fb_exc)
             if runtime is None:
+                if provider_retry_after is not None:
+                    try:
+                        from cron.jobs import set_provider_backoff
+
+                        backoff_until = set_provider_backoff(
+                            job_id, provider_retry_after
+                        )
+                        if backoff_until:
+                            logger.warning(
+                                "Job '%s': provider retry-after backoff active "
+                                "until %s (%.0fs); scheduled fires are suppressed "
+                                "until then.",
+                                job_id,
+                                backoff_until,
+                                provider_retry_after,
+                            )
+                    except Exception:
+                        logger.debug(
+                            "Job '%s': could not persist provider retry-after backoff",
+                            job_id,
+                            exc_info=True,
+                        )
                 raise RuntimeError(format_runtime_provider_error(resolve_exc)) from resolve_exc
 
         reasoning_config = resolve_reasoning_config(
