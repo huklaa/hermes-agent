@@ -60,9 +60,6 @@ class NousProfile(ProviderProfile):
         sticky_key = _cache_scope_from_session_id(get_conversation_context() or session_id)
         if sticky_key:
             body["session_id"] = sticky_key
-        provider_preferences = context.get("provider_preferences")
-        if provider_preferences:
-            body["provider"] = provider_preferences
         return body
 
     def build_api_kwargs_extras(
