@@ -1,0 +1,49 @@
+name: Apply focused fix for 89600
+
+on:
+  push:
+    branches:
+      - automation/patch-89600
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/89600-noninteractive-tool-override
+          fetch-depth: 0
+
+      - name: Apply fix and regression tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('hermes_cli/plugins_cmd.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        try:\n            answer = console.input(prompt).strip().lower()\n        except (EOFError, KeyboardInterrupt):\n            answer = ""\n        allow_tool_override = answer in {"y", "yes"}\n'''
+          new = '''        if not (sys.stdin.isatty() and sys.stdout.isatty()):\n            # Fail closed when either stream is non-interactive. A redirected\n            # stdout can hide the prompt while a live stdin blocks forever.\n            allow_tool_override = False\n        else:\n            try:\n                answer = console.input(prompt).strip().lower()\n            except (EOFError, KeyboardInterrupt):\n                answer = ""\n            allow_tool_override = answer in {"y", "yes"}\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one prompt block, found {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+
+          test = Path('tests/hermes_cli/test_plugins_cmd_tool_override_prompt.py')
+          test.write_text('''from unittest.mock import MagicMock, patch\n\n\ndef test_tool_override_prompt_fails_closed_when_stdout_redirected():\n    from hermes_cli.plugins_cmd import _resolve_tool_override_grant\n\n    console = MagicMock()\n    with (\n        patch("sys.stdin") as stdin,\n        patch("sys.stdout") as stdout,\n        patch("hermes_cli.plugins_cmd._set_plugin_entry_flag") as persist,\n    ):\n        stdin.isatty.return_value = True\n        stdout.isatty.return_value = False\n\n        _resolve_tool_override_grant(console, "capplug", None)\n\n    console.input.assert_not_called()\n    persist.assert_called_once_with("capplug", "allow_tool_override", False)\n\n\ndef test_tool_override_prompt_still_accepts_interactive_yes():\n    from hermes_cli.plugins_cmd import _resolve_tool_override_grant\n\n    console = MagicMock()\n    console.input.return_value = "yes"\n    with (\n        patch("sys.stdin") as stdin,\n        patch("sys.stdout") as stdout,\n        patch("hermes_cli.plugins_cmd._set_plugin_entry_flag") as persist,\n    ):\n        stdin.isatty.return_value = True\n        stdout.isatty.return_value = True\n\n        _resolve_tool_override_grant(console, "capplug", None)\n\n    console.input.assert_called_once()\n    persist.assert_called_once_with("capplug", "allow_tool_override", True)\n''', encoding='utf-8')
+          PY
+
+      - name: Validate syntax
+        run: python -m py_compile hermes_cli/plugins_cmd.py tests/hermes_cli/test_plugins_cmd_tool_override_prompt.py
+
+      - name: Commit focused change
+        shell: bash
+        run: |
+          git config user.name "huklaa"
+          git config user.email "hukla25@gmail.com"
+          git add hermes_cli/plugins_cmd.py tests/hermes_cli/test_plugins_cmd_tool_override_prompt.py
+          git commit -m "fix(plugins): avoid hidden tool override prompt"
+          git push origin HEAD:fix/89600-noninteractive-tool-override
