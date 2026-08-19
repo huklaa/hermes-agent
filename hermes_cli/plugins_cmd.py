@@ -1666,11 +1666,16 @@ def _resolve_tool_override_grant(
             "everything the agent routes through that tool.\n"
             "  Grant it? [y/N] "
         )
-        try:
-            answer = console.input(prompt).strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            answer = ""
-        allow_tool_override = answer in {"y", "yes"}
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            # Fail closed when either stream is non-interactive. A redirected
+            # stdout can hide the prompt while a live stdin blocks forever.
+            allow_tool_override = False
+        else:
+            try:
+                answer = console.input(prompt).strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+            allow_tool_override = answer in {"y", "yes"}
 
     plugin_id = key
     _set_plugin_entry_flag(plugin_id, "allow_tool_override", allow_tool_override)
