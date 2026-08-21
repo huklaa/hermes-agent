@@ -21,6 +21,12 @@ import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/p
 import { $reactionsEnabled, setReactionsEnabled } from '@/store/reactions-enabled'
 import { $reasoningCollapsedByDefault, setReasoningCollapsedByDefault } from '@/store/reasoning-disclosure'
 import { $sessionListDensity, type SessionListDensity, setSessionListDensity } from '@/store/session-list-density'
+import {
+  $thinkingFontSize,
+  setThinkingFontSize,
+  THINKING_FONT_SIZE_MAX,
+  THINKING_FONT_SIZE_MIN
+} from '@/store/thinking-font-size'
 import { $toolViewMode, setToolViewMode } from '@/store/tool-view'
 import {
   $translucency,
@@ -344,6 +350,7 @@ export function AppearanceSettings() {
   const { themeName, mode, resolvedMode, availableThemes, setTheme, setMode } = useTheme()
   const toolViewMode = useStore($toolViewMode)
   const reasoningCollapsedByDefault = useStore($reasoningCollapsedByDefault)
+  const thinkingFontSize = useStore($thinkingFontSize)
   const sessionListDensity = useStore($sessionListDensity)
   const zoomPercent = useStore($zoomPercent)
   const embedMode = useStore($embedMode)
@@ -567,6 +574,32 @@ export function AppearanceSettings() {
           />
 
           <TerminalFontSetting />
+
+          <ListRow
+            action={
+              <div className="flex items-center gap-3">
+                <input
+                  aria-label="Thinking and action text size"
+                  className="h-1 w-40 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-tertiary)"
+                  max={THINKING_FONT_SIZE_MAX}
+                  min={THINKING_FONT_SIZE_MIN}
+                  onChange={event => {
+                    triggerHaptic('selection')
+                    setThinkingFontSize(Number(event.target.value))
+                  }}
+                  step={1}
+                  style={{ accentColor: 'var(--dt-primary)' }}
+                  type="range"
+                  value={thinkingFontSize}
+                />
+                <span className="w-9 text-right text-[length:var(--conversation-caption-font-size)] tabular-nums text-(--ui-text-tertiary)">
+                  {thinkingFontSize}px
+                </span>
+              </div>
+            }
+            description="Adjust the size of Thinking text and agent action/tool notices without changing normal reply text."
+            title="Thinking & action text size"
+          />
 
           <ListRow
             action={
