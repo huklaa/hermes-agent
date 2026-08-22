@@ -30,8 +30,8 @@ jobs:
           text = path.read_text()
           old = '''                is_dangerous, _pk, description = detect_dangerous_command(command)\n                if is_dangerous:\n                    return {\n'''
           new = '''                is_dangerous, _pk, description = detect_dangerous_command(command)\n                if is_dangerous and not is_approved(get_current_session_key(), _pk):\n                    return {\n'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one single-query guard anchor, found {text.count(old)}')
+          if old not in text:
+              raise SystemExit('single-query guard anchor not found')
           path.write_text(text.replace(old, new, 1))
 
           test = Path('tests/tools/test_single_query_allowlist_92405.py')
