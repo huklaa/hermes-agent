@@ -54,9 +54,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Which released versions do we test updating FROM? Resolved once and shared
-  # by both route matrices, so the two routes cover the same set.
+  # Scheduled release/update coverage belongs to the upstream release repo.
+  # Forks may still run this workflow explicitly through workflow_dispatch.
   pick-releases:
+    if: github.repository == 'NousResearch/hermes-agent' || github.event_name == 'workflow_dispatch'
     name: Pick release tags
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -72,6 +73,11 @@ jobs:
           fetch-tags: true
           sparse-checkout: scripts/sandbox/pick-release-tags.sh
           sparse-checkout-cone-mode: false
+      # GitHub forks do not necessarily carry upstream release tags. Keep manual
+      # fork runs useful without making every fork execute the scheduled matrix.
+      - name: Fetch upstream release tags in fork
+        if: github.repository != 'NousResearch/hermes-agent'
+        run: git fetch --tags --force https://github.com/NousResearch/hermes-agent.git 'refs/tags/v*:refs/tags/v*'
       - id: pick
         run: |
           set -euo pipefail
