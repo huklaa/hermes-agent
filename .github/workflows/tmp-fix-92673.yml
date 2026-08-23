@@ -1,0 +1,45 @@
+name: tmp-fix-92673
+on:
+  push:
+    branches:
+      - fix-92673-anthropic-dated-pricing
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-92673-anthropic-dated-pricing
+          fetch-depth: 0
+      - name: Apply focused fix and regression tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('agent/usage_pricing.py')
+          text = path.read_text()
+          old = '''    # Normalize dots to dashes in version numbers (e.g. 4.7 → 4-7, 4.6 → 4-6)\n    # But preserve the rest of the name structure\n    name = re.sub(r"(\\d+)\\.(\\d+)", r"\\1-\\2", name)\n    return name\n'''
+          new = '''    # Normalize dots to dashes in version numbers (e.g. 4.7 → 4-7, 4.6 → 4-6)\n    # But preserve the rest of the name structure\n    name = re.sub(r"(\\d+)\\.(\\d+)", r"\\1-\\2", name)\n    # Anthropic snapshot ids append an eight-digit release date to the priced\n    # model alias (for example claude-haiku-4-5-20251001). Pricing is shared\n    # with that alias, so strip only the documented trailing date component.\n    name = re.sub(r"-\\d{8}$", "", name)\n    return name\n'''
+          if old not in text:
+              raise SystemExit('target normalization block not found exactly')
+          path.write_text(text.replace(old, new, 1))
+
+          test = Path('tests/agent/test_usage_pricing_anthropic_dated.py')
+          test.write_text('''from agent.usage_pricing import get_pricing_entry\n\n\ndef test_dated_anthropic_snapshot_ids_reuse_alias_pricing():\n    for snapshot, alias in (\n        ("claude-haiku-4-5-20251001", "claude-haiku-4-5"),\n        ("claude-sonnet-4-5-20250929", "claude-sonnet-4-5"),\n        ("claude-opus-4-1-20250805", "claude-opus-4-1"),\n    ):\n        expected = get_pricing_entry(alias, provider="anthropic")\n        actual = get_pricing_entry(snapshot, provider="anthropic")\n\n        assert expected is not None, alias\n        assert actual == expected, snapshot\n\n\ndef test_anthropic_normalization_does_not_strip_non_date_suffixes():\n    assert get_pricing_entry("claude-haiku-4-5-preview", provider="anthropic") is None\n''')
+          PY
+          python -m pytest tests/agent/test_usage_pricing_anthropic_dated.py -q
+          python -m ruff check agent/usage_pricing.py tests/agent/test_usage_pricing_anthropic_dated.py
+          git diff --check
+      - name: Commit clean product changes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/tmp-fix-92673.yml
+          git add agent/usage_pricing.py tests/agent/test_usage_pricing_anthropic_dated.py
+          git commit -m 'fix(pricing): normalize dated Anthropic model ids'
+          git push origin HEAD:fix-92673-anthropic-dated-pricing
