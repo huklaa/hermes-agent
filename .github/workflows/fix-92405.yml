@@ -20,6 +20,21 @@ jobs:
           ref: fix-92405-single-query-allowlist
           fetch-depth: 0
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+        with:
+          version: "0.9.28"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install test dependencies
+        run: uv sync --locked --python 3.11 --extra dev
+
       - name: Apply focused fix and regression tests
         shell: bash
         run: |
@@ -41,8 +56,7 @@ jobs:
           git diff -- tools/approval.py tests/tools/test_single_query_allowlist_92405.py
 
       - name: Run focused tests
-        run: |
-          python -m pytest tests/tools/test_single_query_allowlist_92405.py -q
+        run: uv run python -m pytest tests/tools/test_single_query_allowlist_92405.py -q
 
       - name: Commit validated fix
         shell: bash
