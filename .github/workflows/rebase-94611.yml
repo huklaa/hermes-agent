@@ -1,0 +1,40 @@
+name: Rebase PR 94611
+
+on:
+  push:
+    branches:
+      - ci-rebase-94611
+
+permissions:
+  contents: write
+
+jobs:
+  rebase-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci-rebase-94611
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Rebase PR branch onto upstream main
+        run: |
+          git config user.name "Hukla"
+          git config user.email "129692708+huklaa@users.noreply.github.com"
+          git remote add upstream https://github.com/NousResearch/hermes-agent.git
+          git fetch upstream main
+          git fetch origin fix-94542-kanban-ime-enter
+          OLD_SHA=$(git rev-parse origin/fix-94542-kanban-ime-enter)
+          echo "OLD_SHA=$OLD_SHA" >> "$GITHUB_ENV"
+          git checkout -B fix-94542-kanban-ime-enter origin/fix-94542-kanban-ime-enter
+          git rebase upstream/main
+      - name: Install JS dependencies
+        run: npm ci --ignore-scripts
+      - name: Targeted IME regression test
+        working-directory: apps/desktop
+        run: npx vitest run --project ui src/plugins/kanban/ime-enter.test.ts
+      - name: Push rebased branch
+        run: git push --force-with-lease=refs/heads/fix-94542-kanban-ime-enter:${OLD_SHA} origin HEAD:fix-94542-kanban-ime-enter
