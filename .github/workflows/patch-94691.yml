@@ -1,0 +1,53 @@
+name: Patch 94691
+on:
+  push:
+    branches: [fix-94691-async-delegation-schema]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-94691-async-delegation-schema
+      - name: Apply canonical schema fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('hermes_state_common.py')
+          s = p.read_text()
+          old = "    origin_ui_session_id TEXT NOT NULL DEFAULT '',\n    parent_session_id TEXT,"
+          new = "    origin_ui_session_id TEXT NOT NULL DEFAULT '',\n    origin_session_id TEXT NOT NULL DEFAULT '',\n    parent_session_id TEXT,"
+          assert old in s
+          p.write_text(s.replace(old, new, 1))
+          PY
+          cat > tests/test_async_delegation_canonical_schema.py <<'PY'
+          import sqlite3
+
+          from hermes_state import SessionDB
+
+
+          def test_fresh_session_db_includes_async_delegation_origin_session_id(tmp_path):
+              db_path = tmp_path / "state.db"
+              db = SessionDB(db_path=db_path)
+              db.close()
+
+              with sqlite3.connect(db_path) as conn:
+                  columns = {
+                      row[1]
+                      for row in conn.execute("PRAGMA table_info(async_delegations)")
+                  }
+
+              assert "origin_session_id" in columns
+          PY
+      - name: Focused test
+        run: python -m pytest tests/test_async_delegation_canonical_schema.py -q
+      - name: Commit patch
+        run: |
+          rm .github/workflows/patch-94691.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hermes_state_common.py tests/test_async_delegation_canonical_schema.py .github/workflows/patch-94691.yml
+          git commit -m "fix(state): align async delegation canonical schema"
+          git push
