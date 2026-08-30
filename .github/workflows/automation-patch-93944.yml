@@ -1,0 +1,46 @@
+name: Isolated patch for PR 93944
+
+on:
+  push:
+    branches:
+      - automation-patch-93944
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation-patch-93944
+      - name: Patch stale browser selection and regression
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source = Path("hermes_cli/tools_config.py")
+          text = source.read_text(encoding="utf-8")
+          old = '''        else:\n            browser_cfg.pop("use_gateway", None)\n\n    if provider.get("browser_backend"):'''
+          new = '''        else:\n            browser_cfg.pop("cloud_provider", None)\n            browser_cfg.pop("use_gateway", None)\n\n    if provider.get("browser_backend"):'''
+          assert text.count(old) == 1, text.count(old)
+          source.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          test_file = Path("tests/tools/test_browser_use_cli_managed_selection.py")
+          tests = test_file.read_text(encoding="utf-8").rstrip()
+          marker = "test_empty_browser_provider_clears_stale_managed_selection"
+          assert marker not in tests
+          tests += '''\n\n\ndef test_empty_browser_provider_clears_stale_managed_selection():\n    from hermes_cli.tools_config import _write_provider_config\n\n    config = {\n        "browser": {\n            "cloud_provider": "nous",\n            "use_gateway": True,\n            "backend": "browser-use",\n            "keep_me": "value",\n        }\n    }\n\n    _write_provider_config(\n        {"browser_provider": ""}, config, managed_feature=None\n    )\n\n    browser = config["browser"]\n    assert "cloud_provider" not in browser\n    assert "use_gateway" not in browser\n    assert browser["backend"] == "browser-use"\n    assert browser["keep_me"] == "value"\n'''
+          test_file.write_text(tests + "\n", encoding="utf-8")
+      - name: Install test runner
+        run: python -m pip install pytest
+      - name: Run focused regression
+        run: python -m pytest -q tests/tools/test_browser_use_cli_managed_selection.py
+      - name: Commit isolated patch
+        run: |
+          git config user.name "huklaa"
+          git config user.email "129692708+huklaa@users.noreply.github.com"
+          git add hermes_cli/tools_config.py tests/tools/test_browser_use_cli_managed_selection.py
+          git commit -m "fix(browser): clear stale managed selection"
+          git push origin HEAD:automation-patch-93944
