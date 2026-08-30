@@ -63,3 +63,27 @@ def test_direct_browser_use_selection_stays_on_native_cli_path(monkeypatch):
     env = {}
     assert bu_cli._resolve_backend_cdp(env, "task-1") is None
     assert "BU_CDP_WS" not in env and "BU_CDP_URL" not in env
+
+
+def test_empty_browser_provider_clears_stale_managed_selection():
+    from hermes_cli.tools_config import _write_provider_config
+
+    config = {
+        "browser": {
+            "cloud_provider": "nous",
+            "use_gateway": True,
+            "backend": "browser-use",
+            "keep_me": "value",
+        }
+    }
+
+    _write_provider_config(
+        {"browser_provider": ""}, config, managed_feature=None
+    )
+
+    browser = config["browser"]
+    assert "cloud_provider" not in browser
+    assert "use_gateway" not in browser
+    assert browser["backend"] == "browser-use"
+    assert browser["keep_me"] == "value"
+
