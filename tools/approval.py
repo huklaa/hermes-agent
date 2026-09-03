@@ -578,6 +578,13 @@ HARDLINE_PATTERNS = [
     # argument, not a command. The argument tail ([^\n]*of=/dev/...) is kept
     # so flag order doesn't matter.
     (_CMDPOS + r'dd\b[^\n]*\bof=/dev/(sd|nvme|hd|mmcblk|vd|xvd)[a-z0-9]*', "dd to raw block device"),
+    # Destructive block-device utilities take the target as a positional
+    # operand rather than dd's of= argument. Anchor the command word and
+    # require a raw block-device path so ordinary file shredding remains
+    # available (#102371).
+    (_CMDPOS + r'shred\b[^\n]*\s+/dev/(sd|nvme|hd|mmcblk|vd|xvd)[a-z0-9]*\b', "shred raw block device"),
+    (_CMDPOS + r'wipefs\b[^\n]*\s+/dev/(sd|nvme|hd|mmcblk|vd|xvd)[a-z0-9]*\b', "wipefs raw block device"),
+    (_CMDPOS + r'blkdiscard\b[^\n]*\s+/dev/(sd|nvme|hd|mmcblk|vd|xvd)[a-z0-9]*\b', "discard raw block device"),
     # The redirect rule has no command-name token to anchor (`>` appears
     # mid-command: `cat f > /dev/sda`), so command-position anchoring is the
     # wrong tool. It is instead matched against a QUOTE-MASKED variant of the

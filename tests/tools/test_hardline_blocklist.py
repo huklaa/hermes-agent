@@ -90,6 +90,12 @@ _HARDLINE_BLOCK = [
     "dd if=/dev/zero of=/dev/sda bs=1M",
     "dd if=/dev/urandom of=/dev/nvme0n1",
     "dd if=anything of=/dev/hda",
+    "shred -n1 -z /dev/sda",
+    "sudo shred -v /dev/nvme0n1",
+    "wipefs -a /dev/sdb",
+    "env FOO=1 wipefs --all /dev/mmcblk0",
+    "blkdiscard /dev/vda",
+    "nohup blkdiscard -f /dev/xvda",
     "echo bad > /dev/sda",
     "cat /dev/urandom > /dev/sdb",
     # Fork bomb
@@ -173,6 +179,12 @@ _HARDLINE_ALLOW = [
     # dd to regular files
     "dd if=/dev/zero of=./image.bin",
     "dd if=./data of=./backup.bin",
+    "shred file.txt",
+    "shred -n1 -z ./scratch.img",
+    "wipefs --help",
+    "blkdiscard --help",
+    'echo "shred -n1 -z /dev/sda"',
+    'git commit -m "never run wipefs -a /dev/sda"',
     # Redirect to regular files / non-block devices
     "echo done > /tmp/flag",
     "echo test > /dev/null",
