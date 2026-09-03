@@ -146,6 +146,115 @@ class TestReadFile:
         _assert_clean(result.content)
 
 
+# ── read_file total_lines (issue #3907) ─────────────────────────────────
+# ``wc -l`` counts newline characters, not lines, so a file whose last
+# line has no trailing newline was previously undercounted by 1.
+
+class TestReadFileTotalLines:
+    def test_no_trailing_newline_three_lines(self, ops, tmp_path):
+        f = tmp_path / "no_trailing.txt"
+        f.write_text("line1\nline2\nline3")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        assert result.total_lines == 3
+        assert "line1" in result.content
+        assert "line2" in result.content
+        assert "line3" in result.content
+        _assert_clean(result.content)
+
+    def test_with_trailing_newline_three_lines(self, ops, tmp_path):
+        f = tmp_path / "with_trailing.txt"
+        f.write_text("line1\nline2\nline3\n")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        assert result.total_lines == 3
+        _assert_clean(result.content)
+
+    def test_empty_file(self, ops, tmp_path):
+        f = tmp_path / "empty.txt"
+        f.write_text("")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        assert result.total_lines == 0
+
+    def test_single_line_no_trailing_newline(self, ops, tmp_path):
+        f = tmp_path / "single_no_nl.txt"
+        f.write_text("onlyline")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        assert result.total_lines == 1
+        assert "onlyline" in result.content
+
+    def test_single_line_with_trailing_newline(self, ops, tmp_path):
+        f = tmp_path / "single_with_nl.txt"
+        f.write_text("onlyline\n")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        assert result.total_lines == 1
+
+    def test_large_file_no_trailing_newline(self, ops, tmp_path):
+        f = tmp_path / "large_no_trailing.txt"
+        content = "\n".join(f"LINE_{i:05d}" for i in range(1, 601))
+        f.write_text(content)  # no trailing newline
+        result = ops.read_file(str(f), offset=1, limit=2000)
+        assert result.error is None
+        assert result.total_lines == 600
+
+    def test_large_file_with_trailing_newline(self, ops, tmp_path):
+        f = tmp_path / "large_with_trailing.txt"
+        content = "\n".join(f"LINE_{i:05d}" for i in range(1, 601)) + "\n"
+        f.write_text(content)
+        result = ops.read_file(str(f), offset=1, limit=2000)
+        assert result.error is None
+        assert result.total_lines == 600
+
+    def test_no_trailing_newline_paginated_last_page(self, ops, tmp_path):
+        """total_lines must be correct even when the read is paginated and
+        the final page does not reach EOF."""
+        f = tmp_path / "paginated_no_trailing.txt"
+        content = "\n".join(f"LINE_{i:05d}" for i in range(1, 601))
+        f.write_text(content)
+        first = ops.read_file(str(f), offset=1, limit=10)
+        assert first.error is None
+        assert first.total_lines == 600
+        assert first.truncated is True
+
+    def test_unicode_content_no_trailing_newline(self, ops, tmp_path):
+        f = tmp_path / "unicode_no_trailing.txt"
+        f.write_text("héllo\n世界\nこんにちは", encoding="utf-8")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        assert result.total_lines == 3
+        assert "世界" in result.content
+
+    def test_unicode_content_with_trailing_newline(self, ops, tmp_path):
+        f = tmp_path / "unicode_with_trailing.txt"
+        f.write_text("héllo\n世界\nこんにちは\n", encoding="utf-8")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        assert result.total_lines == 3
+
+    def test_mixed_line_endings_no_trailing_newline(self, ops, tmp_path):
+        """CRLF-style content whose final line has no trailing newline."""
+        f = tmp_path / "mixed_endings.txt"
+        with open(f, "wb") as fh:
+            fh.write(b"line1\r\nline2\nline3")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        assert result.total_lines == 3
+
+    def test_no_phantom_empty_last_line(self, ops, tmp_path):
+        """The line-number-prefixed content must not grow a phantom empty
+        final line when the source file lacks a trailing newline."""
+        f = tmp_path / "no_phantom.txt"
+        f.write_text("line1\nline2\nline3")
+        result = ops.read_file(str(f))
+        assert result.error is None
+        lines = result.content.split("\n")
+        assert len(lines) == 3
+        assert "line3" in lines[-1]
+
+
 # ── write_file ───────────────────────────────────────────────────────────
 
 class TestWriteFile:

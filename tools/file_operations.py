@@ -1601,6 +1601,21 @@ class ShellFileOperations(FileOperations):
             total_lines = int(wc_output.strip())
         except ValueError:
             total_lines = 0
+
+        # ``wc -l`` counts newline characters, not lines. A file whose last
+        # line has no trailing newline therefore has one fewer newline than
+        # lines of content (e.g. "a\nb\nc" is 3 lines but only 2 newlines).
+        # Detect this by probing whether the file's very last byte is a
+        # newline, and correct the undercount.
+        ends_with_newline = True
+        if file_size > 0:
+            tail_cmd = f"tail -c 1 {self._escape_shell_arg(path)} | wc -l"
+            tail_result = self._exec(tail_cmd)
+            tail_output = _strip_terminal_fence_leaks(tail_result.stdout)
+            if tail_result.exit_code == 0:
+                ends_with_newline = tail_output.strip() != "0"
+                if not ends_with_newline:
+                    total_lines += 1
         
         # Check if truncated
         truncated = total_lines > end_line
@@ -1611,13 +1626,9 @@ class ShellFileOperations(FileOperations):
         # ``cut`` (unlike sed -n p) always newline-terminates its output,
         # so a file whose final line has no trailing newline would grow a
         # phantom empty last line. Only possible when this page reaches the
-        # file's final line; probe the last byte and strip the artifact.
-        if not truncated and read_output.endswith('\n'):
-            tail_cmd = f"tail -c 1 {self._escape_shell_arg(path)} | wc -l"
-            tail_result = self._exec(tail_cmd)
-            tail_output = _strip_terminal_fence_leaks(tail_result.stdout)
-            if tail_result.exit_code == 0 and tail_output.strip() == "0":
-                read_output = read_output[:-1]
+        # file's final line and the file itself lacks a trailing newline.
+        if not truncated and read_output.endswith('\n') and not ends_with_newline:
+            read_output = read_output[:-1]
 
         # Ambiguous-silence guards: an empty content string is
         # indistinguishable, from inside the model, from a broken tool —
