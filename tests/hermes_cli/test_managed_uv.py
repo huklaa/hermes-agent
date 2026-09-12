@@ -1542,3 +1542,28 @@ class TestWindowsRuntimeSelfLock:
 
         assert locked
         assert "999" in detail
+
+
+def test_install_uv_windows_disables_profile_and_bounds_subprocess(monkeypatch):
+    from hermes_cli import managed_uv
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(managed_uv.subprocess, "run", fake_run)
+    env = {"UV_INSTALL_DIR": r"C:\tmp\hermes\bin"}
+    managed_uv._install_uv_windows(env)
+
+    cmd, kwargs = calls[0]
+    assert cmd == [
+        "powershell", "-NoProfile", "-NonInteractive",
+        "-ExecutionPolicy", "Bypass", "-Command",
+        "irm https://astral.sh/uv/install.ps1 | iex",
+    ]
+    assert kwargs["env"] is env
+    assert kwargs["check"] is True
+    assert kwargs["capture_output"] is True
+    assert kwargs["timeout"] == 120
