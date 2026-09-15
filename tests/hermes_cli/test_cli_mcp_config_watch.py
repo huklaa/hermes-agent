@@ -195,6 +195,22 @@ class TestMCPConfigWatch:
         assert "MCP server config changed" not in capsys.readouterr().out
 
 
+def test_tui_init_seeds_signature_when_config_exists(tmp_path, monkeypatch):
+    """Starting the TUI with an existing config initializes the watcher."""
+    from cli import HermesCLI
+
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("mcp_servers: {}\\n")
+    obj = object.__new__(HermesCLI)
+    obj.config = {"mcp_servers": {}}
+    monkeypatch.setenv("HERMES_DEFER_AGENT_STARTUP", "1")
+
+    with patch("hermes_cli.config.get_config_path", return_value=cfg_file):
+        obj._tui_init_run_state()
+
+    assert obj._config_sig == file_signature(cfg_file.stat())
+
+
 def test_pinned_mtime_same_size_replacement_triggers_reload(tmp_path):
     """#111105: cp -p / rsync -t style replacement (same mtime, same size) must still reload."""
     import os
