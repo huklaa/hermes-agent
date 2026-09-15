@@ -82,12 +82,13 @@ describe('shouldNotify', () => {
   const DAY = 24 * 60 * 60 * 1000
   const now = 1_000_000
 
-  // Transition table with the snooze still active: notify only on a TRANSITION
-  // into a bad state; ok never nudges.
+  // Transition table with the snooze still active: notify only on a known
+  // in-session transition into a bad state. A fresh renderer has no previous
+  // status and must honor the persisted cooldown.
   it.each<[previous: Status | null, next: Status, notify: boolean]>([
     [null, 'ok', false],
-    [null, 'needs-auth', true],
-    [null, 'error', true],
+    [null, 'needs-auth', false],
+    [null, 'error', false],
     ['ok', 'ok', false],
     ['ok', 'needs-auth', true],
     ['ok', 'error', true],
@@ -102,6 +103,8 @@ describe('shouldNotify', () => {
   })
 
   it('re-nudges a server that stays broken once the daily snooze lapses, never for ok', () => {
+    expect(shouldNotify(null, 'needs-auth', now - 1, now)).toBe(true)
+    expect(shouldNotify(null, 'error', 0, now)).toBe(true)
     expect(shouldNotify('needs-auth', 'needs-auth', now - 1, now)).toBe(true)
     expect(shouldNotify('error', 'error', now, now)).toBe(true)
     expect(shouldNotify('ok', 'ok', now - DAY, now)).toBe(false)

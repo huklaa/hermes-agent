@@ -33,8 +33,8 @@ export type McpHealthStatus = 'error' | 'needs-auth' | 'ok'
 /**
  * The notify decision, as a pure state machine: nudge on a TRANSITION into a
  * bad state — never for ok. An unknown previous state (first sweep of the
- * session) counts as a transition: an expired token discovered at launch is
- * exactly the case this exists for.
+ * session) counts as a transition only when the persisted cooldown is not
+ * active, so restarting the renderer cannot bypass a snooze.
  *
  * A server that STAYS broken is nudged again once the daily snooze lapses:
  * a dead OAuth token is a standing problem the user has to act on (sign in
@@ -53,7 +53,7 @@ export function shouldNotify(
     return false
   }
 
-  return previous !== next || now >= snoozedUntil
+  return now >= snoozedUntil || (previous !== null && previous !== next)
 }
 
 // Same time-based snooze the update/skew toasts use (store/updates.ts): a
