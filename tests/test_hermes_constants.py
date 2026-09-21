@@ -67,6 +67,31 @@ class TestGetDefaultHermesRoot:
 
         assert get_default_hermes_root() == custom_root
 
+    @pytest.mark.parametrize("failing_target", ["profile", "native"])
+    def test_resolve_oserror_falls_back_to_custom_profile_root(
+        self, tmp_path, monkeypatch, failing_target
+    ):
+        custom_root = tmp_path / "deployment"
+        profile = custom_root / "profiles" / "research"
+        native_home = tmp_path / "native" / ".hermes"
+        monkeypatch.setenv("HERMES_HOME", str(profile))
+        monkeypatch.setattr(
+            hermes_constants, "_get_platform_default_hermes_home", lambda: native_home
+        )
+        monkeypatch.setattr(hermes_constants, "_default_hermes_root_memo", None)
+
+        original_resolve = Path.resolve
+        failing_path = profile if failing_target == "profile" else native_home
+
+        def failing_resolve(path, *args, **kwargs):
+            if path == failing_path:
+                raise OSError("filesystem resolution failed")
+            return original_resolve(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", failing_resolve)
+
+        assert get_default_hermes_root() == custom_root
+
     @pytest.mark.windows_only
     def test_no_hermes_home_returns_localappdata_root_on_windows(self, tmp_path, monkeypatch):
         """Native Windows falls back to %LOCALAPPDATA%\\hermes, not ~/.hermes."""
