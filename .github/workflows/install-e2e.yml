@@ -33,8 +33,6 @@ name: Install & Update E2E
 # after it ships, and would pin an "oldest" that nobody still runs.
 #
 # Triggers:
-#   * every 12 hours, so upstream drift (a new uv, a Node bump, a PyPI change)
-#     surfaces on a schedule rather than in someone's review cycle;
 #   * when a release tag is created -- the moment the set of versions users can
 #     update FROM changes, and the moment a broken updater would strand them;
 #   * manually, where you can pick the route and how many releases to sample.
@@ -62,9 +60,6 @@ on:
         required: false
         type: string
         default: ''
-  schedule:
-    # Every 12 hours, off the hour to avoid the top-of-hour runner crunch.
-    - cron: '20 7,19 * * *'
   push:
     tags:
       # Release tags only: the repo also carries backup/* and one-off tags.
