@@ -39,7 +39,7 @@ name: Install & Update E2E
 #
 # Deliberately NOT on pull_request: a leg takes ~11 minutes of real toolchain
 # installation, and the matrix multiplies that. Updating is release-shaped work,
-# so it is gated on releases and the clock instead.
+# so it is gated on releases and explicit dispatch instead.
 
 on:
   workflow_dispatch:
