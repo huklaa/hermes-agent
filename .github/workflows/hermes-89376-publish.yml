@@ -1,0 +1,50 @@
+name: Publish Hermes 89376
+
+on:
+  pull_request:
+    paths:
+      - hermes-89376-publish-trigger.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/cron-retry-after-backoff
+          fetch-depth: 0
+
+      - name: Apply tested patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/huklaa/pc-runner/main/scripts/hermes-89376-apply.py -o "$RUNNER_TEMP/hermes-89376-apply.py"
+          python "$RUNNER_TEMP/hermes-89376-apply.py"
+          git diff --check
+          python -m compileall -q cron/jobs.py cron/scheduler.py tests/cron/test_provider_retry_backoff.py
+
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q --upgrade pip
+          python -m pip install -q -e '.[dev]'
+          python -m pytest -q tests/cron/test_provider_retry_backoff.py
+          python -m pytest -q tests/cron/test_jobs.py
+          python -m ruff check cron/jobs.py cron/scheduler.py tests/cron/test_provider_retry_backoff.py
+          git diff --check
+
+      - name: Commit and push branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "huklaa"
+          git config user.email "129692708+huklaa@users.noreply.github.com"
+          git add cron/jobs.py cron/scheduler.py tests/cron/test_provider_retry_backoff.py
+          git commit -m "Honor provider retry-after in cron scheduler"
+          git push origin HEAD:agent/cron-retry-after-backoff
